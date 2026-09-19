@@ -6,7 +6,7 @@ import { Field, inputClassName } from "@/components/Field";
 import { fileToCompressedJpeg } from "@/lib/image";
 import type { AnalyzePayload, FilmRoll, NewFrameInput, RollAnalysis } from "@/lib/types";
 import Link from "next/link";
-import { use, useState, type ChangeEvent, type FormEvent } from "react";
+import { use, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -101,6 +101,7 @@ function FramesSection({
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const photographInputRef = useRef<HTMLInputElement>(null);
 
   async function onFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -158,14 +159,40 @@ function FramesSection({
       <p className="mt-1 text-sm text-muted">Add a photograph and the exposure notes that belong with it.</p>
 
       <form onSubmit={onSubmit} className="mt-6 grid gap-4 border border-line bg-surface p-5 sm:grid-cols-2">
-        <Field label="Photograph">
-          <input type="file" accept="image/*" onChange={onFileChange} className="text-sm" />
-        </Field>
+        <div className="sm:col-span-2">
+          <span className="mb-1.5 block text-sm text-muted">Photograph</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              ref={photographInputRef}
+              type="file"
+              accept="image/*"
+              onChange={onFileChange}
+              className="sr-only"
+              tabIndex={-1}
+              disabled={busy}
+            />
+            <Button
+              type="button"
+              disabled={busy}
+              onClick={() => photographInputRef.current?.click()}
+            >
+              Add photograph
+            </Button>
+            <span className="text-sm text-muted">
+              {imagePreviewUrl ? "Photograph attached." : "JPEG or other image file."}
+            </span>
+          </div>
+        </div>
         <Field label="Caption">
           <input className={inputClassName} value={caption} onChange={(event) => setCaption(event.target.value)} />
         </Field>
         <Field label="Location">
-          <input className={inputClassName} value={location} onChange={(event) => setLocation(event.target.value)} />
+          <input
+            className={inputClassName}
+            value={location}
+            onChange={(event) => setLocation(event.target.value)}
+            placeholder="Sławinek, Lublin, PL"
+          />
         </Field>
         <Field label="Aperture">
           <input
@@ -183,14 +210,11 @@ function FramesSection({
             placeholder="1/125"
           />
         </Field>
-        <div className="flex items-end">
+        <div className="flex items-end sm:col-span-2">
           <Button type="submit" disabled={busy}>
             {busy ? "Saving…" : "Add frame"}
           </Button>
         </div>
-        {imagePreviewUrl ? (
-          <p className="sm:col-span-2 text-sm text-muted">Photograph attached.</p>
-        ) : null}
         {error ? <p className="sm:col-span-2 text-sm text-[#8a2a2a]">{error}</p> : null}
       </form>
 

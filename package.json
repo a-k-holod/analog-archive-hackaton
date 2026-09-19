@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --experimental-strip-types --test src/lib/location.test.ts",
     "verify:supabase": "node scripts/verify-supabase.mjs",
     "db:migrate": "node scripts/apply-migrations.mjs"
   },

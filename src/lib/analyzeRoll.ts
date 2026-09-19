@@ -1,8 +1,11 @@
 import type { AnalyzePayload, RollAnalysis } from "@/lib/types";
+import { normalizeLocation } from "@/lib/location";
 
 export function analyzeRoll(payload: AnalyzePayload): RollAnalysis {
   const locations = unique(
-    payload.frames.map((frame) => frame.location.trim()).filter((value) => value.length > 0),
+    payload.frames
+      .map((frame) => normalizeLocation(frame.location))
+      .filter((value) => value.length > 0),
   );
   const captions = payload.frames
     .map((frame) => frame.caption.trim())
