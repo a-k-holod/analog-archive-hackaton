@@ -2,6 +2,7 @@
 
 import { ButtonLink } from "@/components/Button";
 import { useArchive } from "@/components/ArchiveProvider";
+import type { FilmRoll } from "@/lib/types";
 import Link from "next/link";
 
 export default function ArchivePage() {
@@ -26,7 +27,7 @@ export default function ArchivePage() {
       {!ready ? (
         <p className="mt-16 text-sm text-muted">Loading saved rolls…</p>
       ) : rolls.length === 0 ? (
-        <div className="mt-16 max-w-lg border border-line bg-surface px-6 py-8">
+        <div className="mt-16 max-w-lg border-t border-line pt-8">
           <p className="font-serif text-2xl">Start with a film roll.</p>
           <p className="mt-3 text-muted">
             Create a roll, add frames and notes, then generate a contact sheet and an analysis of
@@ -34,40 +35,80 @@ export default function ArchivePage() {
           </p>
         </div>
       ) : (
-        <div className="mt-10 overflow-x-auto border-t border-line">
-          <table className="w-full min-w-[40rem] text-left">
-            <thead>
-              <tr className="border-b border-line text-sm text-muted">
-                <th className="py-3 pr-4 font-normal">Roll</th>
-                <th className="py-3 pr-4 font-normal">Stock</th>
-                <th className="py-3 pr-4 font-normal">Camera</th>
-                <th className="py-3 pr-4 font-normal">Started</th>
-                <th className="py-3 font-normal">Frames</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rolls.map((roll) => (
-                <tr key={roll.id} className="border-b border-line">
-                  <td className="py-4 pr-4">
-                    <Link href={`/rolls/${roll.id}`} className="font-medium hover:text-cobalt">
-                      {roll.title}
-                    </Link>
-                  </td>
-                  <td className="py-4 pr-4 text-muted">
-                    {roll.filmStock || "—"}
-                    {roll.iso ? ` / ${roll.iso}` : ""}
-                  </td>
-                  <td className="py-4 pr-4 text-muted">{roll.camera || "—"}</td>
-                  <td className="py-4 pr-4 text-muted">{formatDate(roll.startedOn)}</td>
-                  <td className="py-4 text-muted">{roll.frames.length}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="mt-10 border-t border-line">
+          {rolls.map((roll) => (
+            <RollRow key={roll.id} roll={roll} />
+          ))}
+        </ul>
       )}
     </div>
   );
+}
+
+function RollRow({ roll }: { roll: FilmRoll }) {
+  const thumb = firstFrameImage(roll);
+  const stockLine = [roll.filmStock || null, roll.iso ? `ISO ${roll.iso}` : null]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <li className="border-b border-line">
+      <Link
+        href={`/rolls/${roll.id}`}
+        className="group flex gap-4 py-5 transition-colors duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[rgba(42,77,115,0.04)] sm:gap-6 sm:py-6"
+      >
+        <div className="h-16 w-20 shrink-0 overflow-hidden bg-[#d7dbe1] sm:h-[4.5rem] sm:w-24">
+          {thumb ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={thumb}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-[0.65rem] tracking-wide text-muted">
+              —
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 className="font-serif text-xl tracking-tight text-ink group-hover:text-cobalt sm:text-[1.35rem]">
+              {roll.title}
+            </h2>
+            <p className="text-sm text-muted">
+              {roll.frames.length} {roll.frames.length === 1 ? "frame" : "frames"}
+            </p>
+          </div>
+
+          <dl className="mt-2 grid gap-1 text-sm text-muted sm:mt-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-8 sm:gap-y-1">
+            <div className="min-w-0">
+              <dt className="sr-only">Film stock</dt>
+              <dd className="truncate">{stockLine || "Film stock not recorded"}</dd>
+            </div>
+            <div className="sm:text-right">
+              <dt className="sr-only">Started</dt>
+              <dd>{formatDate(roll.startedOn)}</dd>
+            </div>
+            <div className="min-w-0 sm:col-span-2">
+              <dt className="sr-only">Camera</dt>
+              <dd className="truncate">{roll.camera || "Camera not recorded"}</dd>
+            </div>
+          </dl>
+        </div>
+      </Link>
+    </li>
+  );
+}
+
+function firstFrameImage(roll: FilmRoll): string | null {
+  for (const frame of roll.frames) {
+    if (frame.imageUrl) {
+      return frame.imageUrl;
+    }
+  }
+  return null;
 }
 
 function formatDate(value: string): string {

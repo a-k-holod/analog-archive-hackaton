@@ -159,98 +159,141 @@ function FramesSection({
     }
   }
 
+  const hasFrames = roll.frames.length > 0;
+
+  const addForm = (
+    <form
+      onSubmit={onSubmit}
+      className={`grid gap-4 sm:grid-cols-2 ${
+        hasFrames ? "mt-10 border-t border-line pt-8" : "mt-6 border-t border-line pt-6"
+      }`}
+    >
+      <div className="sm:col-span-2">
+        <h3 className="font-serif text-lg tracking-tight">
+          {hasFrames ? "Add another frame" : "Add a frame"}
+        </h3>
+        <p className="mt-1 text-sm text-muted">
+          Attach a photograph and the exposure notes that belong with it.
+        </p>
+      </div>
+      <div className="sm:col-span-2">
+        <span className="mb-1.5 block text-sm text-muted">Photograph</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            ref={photographInputRef}
+            type="file"
+            accept="image/*"
+            onChange={onFileChange}
+            className="sr-only"
+            tabIndex={-1}
+            disabled={busy}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => photographInputRef.current?.click()}
+          >
+            Choose photograph
+          </Button>
+          <span className="text-sm text-muted">
+            {imagePreviewUrl ? "Photograph attached." : "JPEG or other image file."}
+          </span>
+        </div>
+        {imagePreviewUrl ? (
+          <div className="mt-4 max-w-xs">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imagePreviewUrl}
+              alt="Photograph ready to save"
+              className="aspect-[3/2] w-full object-cover"
+            />
+          </div>
+        ) : null}
+      </div>
+      <Field label="Caption">
+        <input className={inputClassName} value={caption} onChange={(event) => setCaption(event.target.value)} />
+      </Field>
+      <Field label="Location">
+        <input
+          className={inputClassName}
+          value={location}
+          onChange={(event) => setLocation(event.target.value)}
+          placeholder="Sławinek, Lublin, PL"
+        />
+      </Field>
+      <Field label="Aperture">
+        <input
+          className={inputClassName}
+          value={aperture}
+          onChange={(event) => setAperture(event.target.value)}
+          placeholder="f/8"
+        />
+      </Field>
+      <Field label="Shutter">
+        <input
+          className={inputClassName}
+          value={shutterSpeed}
+          onChange={(event) => setShutterSpeed(event.target.value)}
+          placeholder="1/125"
+        />
+      </Field>
+      <div className="flex items-end sm:col-span-2">
+        <Button type="submit" disabled={busy}>
+          {busy ? "Saving…" : "Add frame"}
+        </Button>
+      </div>
+      {error ? <p className="sm:col-span-2 text-sm text-[#8a2a2a]">{error}</p> : null}
+    </form>
+  );
+
   return (
     <section>
       <h2 className="font-serif text-2xl">Frames</h2>
-      <p className="mt-1 text-sm text-muted">Add a photograph and the exposure notes that belong with it.</p>
+      <p className="mt-1 text-sm text-muted">
+        {hasFrames
+          ? `${roll.frames.length} ${roll.frames.length === 1 ? "photograph" : "photographs"} on this roll.`
+          : "No frames on this roll yet."}
+      </p>
 
-      <form onSubmit={onSubmit} className="mt-6 grid gap-4 border border-line bg-surface p-5 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <span className="mb-1.5 block text-sm text-muted">Photograph</span>
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              ref={photographInputRef}
-              type="file"
-              accept="image/*"
-              onChange={onFileChange}
-              className="sr-only"
-              tabIndex={-1}
-              disabled={busy}
-            />
-            <Button
-              type="button"
-              disabled={busy}
-              onClick={() => photographInputRef.current?.click()}
-            >
-              Add photograph
-            </Button>
-            <span className="text-sm text-muted">
-              {imagePreviewUrl ? "Photograph attached." : "JPEG or other image file."}
-            </span>
-          </div>
-        </div>
-        <Field label="Caption">
-          <input className={inputClassName} value={caption} onChange={(event) => setCaption(event.target.value)} />
-        </Field>
-        <Field label="Location">
-          <input
-            className={inputClassName}
-            value={location}
-            onChange={(event) => setLocation(event.target.value)}
-            placeholder="Sławinek, Lublin, PL"
-          />
-        </Field>
-        <Field label="Aperture">
-          <input
-            className={inputClassName}
-            value={aperture}
-            onChange={(event) => setAperture(event.target.value)}
-            placeholder="f/8"
-          />
-        </Field>
-        <Field label="Shutter">
-          <input
-            className={inputClassName}
-            value={shutterSpeed}
-            onChange={(event) => setShutterSpeed(event.target.value)}
-            placeholder="1/125"
-          />
-        </Field>
-        <div className="flex items-end sm:col-span-2">
-          <Button type="submit" disabled={busy}>
-            {busy ? "Saving…" : "Add frame"}
-          </Button>
-        </div>
-        {error ? <p className="sm:col-span-2 text-sm text-[#8a2a2a]">{error}</p> : null}
-      </form>
-
-      {roll.frames.length === 0 ? (
-        <p className="mt-6 text-sm text-muted">No frames on this roll yet.</p>
-      ) : (
-        <ul className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {hasFrames ? (
+        <ul className="mt-8 grid gap-8 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-10 lg:grid-cols-3">
           {roll.frames.map((frame) => (
-            <li key={frame.id} className="border border-line bg-surface">
-              <div className="aspect-[3/2] bg-[#d7dbe1]">
-                {frame.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={frame.imageUrl} alt={frame.caption || `Frame ${frame.number}`} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-muted">
+            <li key={frame.id}>
+              <figure>
+                <div className="aspect-[3/2] bg-[#d7dbe1]">
+                  {frame.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={frame.imageUrl}
+                      alt={frame.caption || `Frame ${frame.number}`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-muted">
+                      Frame {String(frame.number).padStart(2, "0")}
+                    </div>
+                  )}
+                </div>
+                <figcaption className="mt-3">
+                  <p className="text-xs tracking-wide text-muted">
                     Frame {String(frame.number).padStart(2, "0")}
-                  </div>
-                )}
-              </div>
-              <div className="p-3">
-                <p className="text-sm text-muted">Frame {String(frame.number).padStart(2, "0")}</p>
-                <p className="mt-1 font-medium">{frame.caption || "Untitled"}</p>
-                <p className="mt-1 text-sm text-muted">
-                  {[frame.location, frame.aperture, frame.shutterSpeed].filter(Boolean).join(" · ") || "No metadata"}
-                </p>
-              </div>
+                  </p>
+                  <p className="mt-1 font-serif text-lg leading-snug tracking-tight">
+                    {frame.caption || "Untitled"}
+                  </p>
+                  <p className="mt-1.5 text-sm text-muted">
+                    {[frame.location, frame.aperture, frame.shutterSpeed].filter(Boolean).join(" · ") ||
+                      "No exposure notes"}
+                  </p>
+                </figcaption>
+              </figure>
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
+
+      {addForm}
     </section>
   );
 }
@@ -325,7 +368,7 @@ function ContactSheetSection({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Local UI state only — not persisted to Supabase in this iteration. */
-  const [frameMode, setFrameMode] = useState<AnalogFrameMode>("auto");
+  const [frameMode, setFrameMode] = useState<AnalogFrameMode>("on");
   // Auto stays conservative until a real detectFilmEdge() result is wired in.
   const showFrame = shouldShowAnalogFrame(frameMode);
 
@@ -352,8 +395,13 @@ function ContactSheetSection({
               : "Compose the current frames into a contact sheet."}
           </p>
         </div>
-        <Button type="button" onClick={handleGenerate} disabled={!canGenerate || busy}>
-          {busy ? "Saving…" : "Generate contact sheet"}
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={handleGenerate}
+          disabled={!canGenerate || busy}
+        >
+          {busy ? "Saving…" : roll.contactSheetGeneratedAt ? "Regenerate contact sheet" : "Generate contact sheet"}
         </Button>
       </div>
       {error ? <p className="mt-4 text-sm text-[#8a2a2a]">{error}</p> : null}
@@ -490,20 +538,18 @@ function AnalysisSection({
             Read the whole roll: sequence, technical notes, and recurring themes.
           </p>
         </div>
-        <Button type="button" onClick={analyze} disabled={busy}>
-          {busy ? "Analyzing…" : "Analyze roll"}
+        <Button type="button" variant="secondary" onClick={analyze} disabled={busy}>
+          {busy ? "Analyzing…" : roll.analysis ? "Regenerate analysis" : "Analyze roll"}
         </Button>
       </div>
       {error ? <p className="mt-4 text-sm text-[#8a2a2a]">{error}</p> : null}
       {roll.analysis ? (
-        <div className="mt-6 space-y-5 border border-line bg-surface p-6">
+        <div className="mt-6 space-y-5 border-t border-line pt-6">
           <p>{roll.analysis.summary}</p>
           <p className="text-muted">{roll.analysis.technicalRead}</p>
-          <ul className="flex flex-wrap gap-2">
+          <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
             {roll.analysis.themes.map((theme) => (
-              <li key={theme} className="border border-line px-2 py-1 text-sm">
-                {theme}
-              </li>
+              <li key={theme}>{theme}</li>
             ))}
           </ul>
           <p className="text-sm text-muted">Generated {formatDateTime(roll.analysis.generatedAt)}</p>
