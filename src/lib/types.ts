@@ -90,16 +90,55 @@ export type RollContentFingerprint = {
   notes: string[];
 };
 
+/**
+ * Photographer's personal darkroom log for one roll.
+ * Distinct from catalog `DevelopmentRecipe` manufacturer starting points.
+ */
+export type DevelopmentRecord = {
+  id: string;
+  developer: string;
+  dilution: string;
+  temperature: string;
+  developmentTime: string;
+  agitation: string;
+  method: string;
+  exposureIndex: string;
+  notes: string;
+  /**
+   * Catalog recipe id used as an optional starting point.
+   * Attribution only — never mutates the bundled manufacturer recipe.
+   */
+  sourceRecipeId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DevelopmentRecordInput = {
+  developer: string;
+  dilution: string;
+  temperature: string;
+  developmentTime: string;
+  agitation: string;
+  method: string;
+  exposureIndex: string;
+  notes: string;
+  sourceRecipeId: string | null;
+};
+
 export type FilmRoll = {
   id: string;
   title: string;
   filmStock: string;
+  /** Stable bundled-catalog identity; null keeps legacy/custom free text valid. */
+  filmStockId: string | null;
   iso: string;
   camera: string;
   startedOn: string;
   createdAt: string;
   frames: Frame[];
   notes: Note[];
+  /** Personal development log; null when the roll has no darkroom record yet. */
+  development: DevelopmentRecord | null;
   contactSheetGeneratedAt: string | null;
   analysis: RollAnalysis | null;
 };
@@ -111,9 +150,16 @@ export type ArchiveState = {
 export type NewRollInput = {
   title: string;
   filmStock: string;
+  filmStockId?: string | null;
   iso: string;
   camera: string;
   startedOn: string;
+};
+
+export type UpdateRollFilmStockInput = {
+  filmStock: string;
+  filmStockId: string | null;
+  iso: string;
 };
 
 export type NewFrameInput = {

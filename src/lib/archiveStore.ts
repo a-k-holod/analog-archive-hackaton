@@ -1,4 +1,9 @@
 import { applyFrameMetadata, type FrameMetadataPatch } from "@/lib/frames";
+import {
+  isPersistableDevelopment,
+  normalizeDevelopmentInput,
+} from "@/lib/developments";
+import { normalizeFilmStockId } from "@/lib/filmCatalog";
 import { createId } from "@/lib/ids";
 import { isPersistableNote } from "@/lib/notes";
 import { loadArchive, saveArchive } from "@/lib/storage";
@@ -10,11 +15,22 @@ import {
   updateContactSheetGeneratedAt,
   updateFrameMetadata,
   updateNoteOcrText,
+  updateRollFilmStockMetadata,
+  upsertDevelopmentRecord,
   uploadNotePhotograph,
   uploadPhotograph,
 } from "@/lib/supabase/archive";
 import { hasConfiguredSupabaseEnv } from "@/lib/supabase/env";
-import type { FilmRoll, NewFrameInput, NewNoteInput, NewRollInput, RollAnalysis } from "@/lib/types";
+import type {
+  DevelopmentRecord,
+  DevelopmentRecordInput,
+  FilmRoll,
+  NewFrameInput,
+  NewNoteInput,
+  NewRollInput,
+  RollAnalysis,
+  UpdateRollFilmStockInput,
+} from "@/lib/types";
 
 export type ArchiveSnapshot = {
   ready: boolean;
@@ -55,12 +71,14 @@ export async function createRoll(input: NewRollInput): Promise<FilmRoll> {
     id: createId(),
     title: input.title.trim(),
     filmStock: input.filmStock.trim(),
+    filmStockId: normalizeFilmStockId(input.filmStockId),
     iso: input.iso.trim(),
     camera: input.camera.trim(),
     startedOn: input.startedOn,
     createdAt: new Date().toISOString(),
     frames: [],
     notes: [],
+    development: null,
     contactSheetGeneratedAt: null,
     analysis: null,
   };
@@ -70,6 +88,7 @@ export async function createRoll(input: NewRollInput): Promise<FilmRoll> {
       id: roll.id,
       title: roll.title,
       filmStock: roll.filmStock,
+      filmStockId: roll.filmStockId,
       iso: roll.iso,
       camera: roll.camera,
       startedOn: roll.startedOn,
@@ -79,6 +98,33 @@ export async function createRoll(input: NewRollInput): Promise<FilmRoll> {
 
   commit([roll, ...snapshot.rolls]);
   return roll;
+}
+
+export async function updateRollFilmStock(
+  rollId: string,
+  input: UpdateRollFilmStockInput,
+): Promise<void> {
+  await ensureHydrated();
+
+  if (!snapshot.rolls.some((roll) => roll.id === rollId)) {
+    throw new Error("Roll not found.");
+  }
+
+  const normalized: UpdateRollFilmStockInput = {
+    filmStock: input.filmStock.trim(),
+    filmStockId: normalizeFilmStockId(input.filmStockId),
+    iso: input.iso.trim(),
+  };
+
+  if (canUseSupabase()) {
+    await updateRollFilmStockMetadata(rollId, normalized);
+  }
+
+  commit(
+    snapshot.rolls.map((roll) =>
+      roll.id === rollId ? { ...roll, ...normalized, analysis: null } : roll,
+    ),
+  );
 }
 
 export async function addFrame(rollId: string, input: NewFrameInput): Promise<void> {
@@ -233,6 +279,54 @@ export async function saveNoteOcrText(rollId: string, noteId: string, ocrText: s
         : item,
     ),
   );
+}
+
+/**
+ * Create or update the photographer's personal development record for a roll.
+ * Copies from a manufacturer recipe are plain values only — the catalog is never mutated.
+ */
+export async function saveDevelopment(
+  rollId: string,
+  input: DevelopmentRecordInput,
+): Promise<DevelopmentRecord> {
+  await ensureHydrated();
+
+  const roll = snapshot.rolls.find((item) => item.id === rollId);
+  if (!roll) {
+    throw new Error("Roll not found.");
+  }
+
+  const normalized = normalizeDevelopmentInput(input);
+  if (!isPersistableDevelopment(normalized)) {
+    throw new Error("Add at least one development value before saving.");
+  }
+
+  const updatedAt = new Date().toISOString();
+  const existing = roll.development;
+  const record: DevelopmentRecord = {
+    id: existing?.id ?? createId(),
+    ...normalized,
+    createdAt: existing?.createdAt ?? updatedAt,
+    updatedAt,
+  };
+
+  if (canUseSupabase()) {
+    await upsertDevelopmentRecord({
+      id: record.id,
+      rollId,
+      input: normalized,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    });
+  }
+
+  commit(
+    snapshot.rolls.map((item) =>
+      item.id === rollId ? { ...item, development: record } : item,
+    ),
+  );
+
+  return record;
 }
 
 /**

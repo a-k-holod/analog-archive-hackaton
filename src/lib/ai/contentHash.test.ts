@@ -40,6 +40,7 @@ function baseRoll(overrides: Partial<FilmRoll> = {}): FilmRoll {
     id: fingerprint.rollId,
     title: fingerprint.title,
     filmStock: fingerprint.filmStock,
+    filmStockId: null,
     iso: fingerprint.iso,
     camera: fingerprint.camera,
     startedOn: fingerprint.startedOn,
@@ -58,6 +59,7 @@ function baseRoll(overrides: Partial<FilmRoll> = {}): FilmRoll {
     })),
     contactSheetGeneratedAt: null,
     analysis: null,
+    development: null,
     ...overrides,
   };
 }

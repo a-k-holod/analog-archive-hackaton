@@ -10,11 +10,7 @@ export type GrayImage = {
   pixels: Uint8ClampedArray;
 };
 
-export type PreprocessVariantId =
-  | "contrast"
-  | "adaptive"
-  | "grid_suppressed"
-  | "upscaled_contrast";
+export type PreprocessVariantId = "source" | "contrast" | "grid_suppressed";
 
 export type PreprocessVariant = {
   id: PreprocessVariantId;
@@ -31,8 +27,9 @@ export type RgbaImage = {
   data: Uint8ClampedArray;
 };
 
-const TARGET_MIN_EDGE = 900;
 const MAX_EDGE = 1600;
+/** Binary rasters darker than this are treated as polarity-inverted. */
+const MAX_BINARY_DARK_RATIO = 0.45;
 
 /** Convert RGBA into luminance grayscale. */
 export function rgbaToGray(rgba: RgbaImage): GrayImage {
@@ -217,30 +214,57 @@ export function scaleGray(gray: GrayImage, scale: number): GrayImage {
   return { width, height, pixels };
 }
 
+/**
+ * Downscale huge photographs so Tesseract sees a document-sized raster.
+ * Do not nearest-neighbor upscale: that blockifies thin handwriting and
+ * previously never downscaled either (`scale < 1.05` rejected every shrink).
+ */
 export function ensureReadableScale(gray: GrayImage): GrayImage {
-  const minEdge = Math.min(gray.width, gray.height);
   const maxEdge = Math.max(gray.width, gray.height);
-  let scale = 1;
-  if (minEdge < TARGET_MIN_EDGE) {
-    scale = TARGET_MIN_EDGE / minEdge;
-  }
-  if (maxEdge * scale > MAX_EDGE) {
-    scale = MAX_EDGE / maxEdge;
-  }
-  if (scale < 1.05) {
+  if (maxEdge <= MAX_EDGE) {
     return cloneGray(gray);
   }
-  return scaleGray(gray, scale);
+  return scaleGray(gray, MAX_EDGE / maxEdge);
+}
+
+/** Share of pixels darker than 80 (0–1). */
+export function darkPixelRatio(gray: GrayImage): number {
+  if (gray.pixels.length === 0) return 0;
+  let dark = 0;
+  for (let i = 0; i < gray.pixels.length; i += 1) {
+    if (gray.pixels[i]! < 80) dark += 1;
+  }
+  return dark / gray.pixels.length;
 }
 
 /**
- * Sauvola-style adaptive threshold → binary (ink black / paper white).
+ * True for near-binary images whose paper has been inverted to black.
+ * Ordinary photographs with dark surroundings are not binary and pass through.
+ */
+export function isInvertedBinaryRaster(gray: GrayImage): boolean {
+  if (gray.pixels.length === 0) return false;
+  let black = 0;
+  let white = 0;
+  for (let i = 0; i < gray.pixels.length; i += 1) {
+    const v = gray.pixels[i]!;
+    if (v <= 8) black += 1;
+    else if (v >= 247) white += 1;
+  }
+  const binaryShare = (black + white) / gray.pixels.length;
+  if (binaryShare < 0.85) return false;
+  return black / gray.pixels.length > MAX_BINARY_DARK_RATIO;
+}
+
+/**
+ * Sauvola adaptive threshold → binary (ink black / paper white).
+ * Uses local standard deviation. The previous mean-as-std proxy drove the
+ * threshold above 255 on bright paper and inverted the page.
  * Window must be odd and >= 3.
  */
 export function adaptiveThreshold(gray: GrayImage, windowSize = 31, k = 0.28): GrayImage {
   const wSize = Math.max(3, windowSize | 1);
   const { width, height, pixels } = gray;
-  const integral = buildIntegral(pixels, width, height);
+  const { integral, integralSq } = buildIntegralAndSquares(pixels, width, height);
   const half = (wSize - 1) >> 1;
   const out = new Uint8ClampedArray(pixels.length);
 
@@ -252,9 +276,11 @@ export function adaptiveThreshold(gray: GrayImage, windowSize = 31, k = 0.28): G
       const y1 = Math.min(height - 1, y + half);
       const area = (x1 - x0 + 1) * (y1 - y0 + 1);
       const sum = rectSum(integral, width, x0, y0, x1, y1);
+      const sumSq = rectSum(integralSq, width, x0, y0, x1, y1);
       const mean = sum / area;
-      // Approximate std via mean absolute deviation proxy using global R=128.
-      const threshold = mean * (1 + k * (mean / 128 - 1));
+      const variance = Math.max(0, sumSq / area - mean * mean);
+      const std = Math.sqrt(variance);
+      const threshold = mean * (1 + k * (std / 128 - 1));
       const v = pixels[y * width + x]!;
       out[y * width + x] = v < threshold ? 0 : 255;
     }
@@ -263,16 +289,26 @@ export function adaptiveThreshold(gray: GrayImage, windowSize = 31, k = 0.28): G
   return { width, height, pixels: out };
 }
 
-function buildIntegral(pixels: Uint8ClampedArray, width: number, height: number): Float64Array {
-  const integral = new Float64Array((width + 1) * (height + 1));
+function buildIntegralAndSquares(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+): { integral: Float64Array; integralSq: Float64Array } {
+  const stride = width + 1;
+  const integral = new Float64Array(stride * (height + 1));
+  const integralSq = new Float64Array(stride * (height + 1));
   for (let y = 1; y <= height; y += 1) {
     let rowSum = 0;
+    let rowSq = 0;
     for (let x = 1; x <= width; x += 1) {
-      rowSum += pixels[(y - 1) * width + (x - 1)]!;
-      integral[y * (width + 1) + x] = integral[(y - 1) * (width + 1) + x]! + rowSum;
+      const v = pixels[(y - 1) * width + (x - 1)]!;
+      rowSum += v;
+      rowSq += v * v;
+      integral[y * stride + x] = integral[(y - 1) * stride + x]! + rowSum;
+      integralSq[y * stride + x] = integralSq[(y - 1) * stride + x]! + rowSq;
     }
   }
-  return integral;
+  return { integral, integralSq };
 }
 
 function rectSum(
@@ -506,8 +542,8 @@ export function pickPeriodicDarkLines(
 
 /**
  * Build a small set of OCR preprocessing variants from an RGBA photograph.
- * Always includes a safe contrast-enhanced path; grid suppression is optional.
- * Grid detection runs before upscaling so cell period stays within detector range.
+ * Source grayscale is always included — aggressive binarization inverted real notes.
+ * Grid suppression is optional and never followed by adaptive thresholding.
  */
 export function buildPreprocessVariants(rgba: RgbaImage): PreprocessVariant[] {
   const base = rgbaToGray(rgba);
@@ -515,50 +551,30 @@ export function buildPreprocessVariants(rgba: RgbaImage): PreprocessVariant[] {
   // Stretch without blur first so thin graph lines stay measurable.
   const crisp = stretchContrast(cropped);
   const grid = suppressGridLines(crisp);
-  const contrast = stretchContrast(softenNoise(grid.gridRemoved ? grid.image : cropped));
-  const scaled = ensureReadableScale(contrast);
 
   const variants: PreprocessVariant[] = [
     {
+      id: "source",
+      label: "Source grayscale",
+      image: ensureReadableScale(cropped),
+      gridRemoved: false,
+    },
+    {
       id: "contrast",
       label: "Contrast enhanced",
-      // Safe baseline: never depends on grid removal succeeding.
       image: ensureReadableScale(stretchContrast(softenNoise(cropped))),
       gridRemoved: false,
     },
   ];
 
-  variants.push({
-    id: "adaptive",
-    label: "Adaptive threshold",
-    image: adaptiveThreshold(ensureReadableScale(stretchContrast(softenNoise(cropped))), 31, 0.28),
-    gridRemoved: false,
-  });
-
   if (grid.gridRemoved) {
     variants.push({
       id: "grid_suppressed",
       label: "Grid suppressed",
-      image: scaled,
+      image: ensureReadableScale(stretchContrast(softenNoise(grid.image))),
       gridRemoved: true,
     });
-    variants.push({
-      id: "upscaled_contrast",
-      label: "Grid suppressed + adaptive",
-      image: adaptiveThreshold(scaled, 31, 0.22),
-      gridRemoved: true,
-    });
-  } else {
-    const boost = scaleGray(scaled, 1.35);
-    if (boost.width !== scaled.width || boost.height !== scaled.height) {
-      variants.push({
-        id: "upscaled_contrast",
-        label: "Upscaled contrast",
-        image: stretchContrast(boost),
-        gridRemoved: false,
-      });
-    }
   }
 
-  return variants;
+  return variants.filter((variant) => !isInvertedBinaryRaster(variant.image));
 }

@@ -164,13 +164,17 @@ export function AnalogFrame({
         data-film-stock={stockLabel ?? undefined}
       >
         <SprocketRail orientation="vertical" surface={surface} />
-        <VerticalRebateLabel stockLabel={stockLabel} frameLabel={numberLabel} />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className={`relative mx-0.5 my-1 bg-[#050505] ${gateClass("portrait", surface)}`}>
+        <div className="flex min-w-0 flex-1 flex-col justify-center">
+          <div
+            className={`relative mx-px bg-[#050505] ${
+              surface === "gallery" ? "my-[6%]" : "my-[5%]"
+            } ${gateClass("portrait", surface)}`}
+          >
             <GateEdge />
             {imageUrl ? renderPhotograph(imageUrl) : <EmptyCell />}
           </div>
         </div>
+        <VerticalRebateLabel stockLabel={stockLabel} frameLabel={numberLabel} surface={surface} />
         <SprocketRail orientation="vertical" surface={surface} />
       </figure>
     );
@@ -329,30 +333,58 @@ function RebateCaption({
 }
 
 /**
- * Vertical-rail rebate: stock + frame run along the strip, parallel to sprockets.
+ * Vertical-rail rebate sits between the gate and the trailing sprocket rail
+ * (same strip order as the horizontal caption: rail → gate → markings → rail).
+ * Stock and frame number occupy opposite ends of the marked edge.
  */
 function VerticalRebateLabel({
   stockLabel,
   frameLabel,
+  surface = "sheet",
 }: {
   stockLabel: string | null;
   frameLabel: string;
+  surface?: "sheet" | "gallery";
 }) {
+  const gallery = surface === "gallery";
+  const sideways = {
+    writingMode: "vertical-rl" as const,
+    transform: "rotate(180deg)",
+  };
   return (
     <figcaption
-      className="flex w-[13px] shrink-0 items-center justify-center self-stretch py-[10%]"
+      className={
+        gallery
+          ? "flex w-[12px] shrink-0 flex-col items-center justify-between self-stretch py-[6%]"
+          : "flex w-[10px] shrink-0 flex-col items-center justify-between self-stretch py-[7%]"
+      }
       data-rebate-label="vertical"
     >
+      {stockLabel ? (
+        <span
+          className={
+            gallery
+              ? "max-h-[58%] overflow-hidden font-mono text-[0.42rem] leading-none tracking-[0.2em] text-[#7a756a]"
+              : "max-h-[52%] overflow-hidden font-mono text-[0.36rem] leading-none tracking-[0.18em] text-[#7a756a]"
+          }
+          style={sideways}
+        >
+          {stockLabel}
+        </span>
+      ) : (
+        <span aria-hidden className="select-none font-mono text-[0.38rem] text-[#6e6a60]">
+          ·
+        </span>
+      )}
       <span
-        className="flex max-h-full flex-col items-center gap-1.5 overflow-hidden font-mono"
-        style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+        className={
+          gallery
+            ? "font-mono text-[0.6rem] leading-none tracking-[0.1em] text-[#c4bfb2]"
+            : "font-mono text-[0.5rem] leading-none tracking-[0.1em] text-[#c4bfb2]"
+        }
+        style={sideways}
       >
-        {stockLabel ? (
-          <span className="truncate text-[0.45rem] tracking-[0.16em] text-[#7a756a]">
-            {stockLabel}
-          </span>
-        ) : null}
-        <span className="text-[0.6rem] tracking-[0.14em] text-[#c4bfb2]">{frameLabel}</span>
+        {frameLabel}
       </span>
     </figcaption>
   );
@@ -367,7 +399,11 @@ function SprocketRail({
   surface?: "sheet" | "gallery";
 }) {
   const gallery = surface === "gallery";
-  const holes = Array.from({ length: gallery ? 8 : 6 }, (_, index) => (
+  // Vertical strips use a denser count so pitch stays believable on tall gates.
+  const holeCount =
+    orientation === "vertical" ? (gallery ? 11 : 8) : gallery ? 8 : 6;
+
+  const holes = Array.from({ length: holeCount }, (_, index) => (
     <span
       key={index}
       className={
@@ -376,8 +412,8 @@ function SprocketRail({
             ? "h-[5px] w-[7px] shrink-0 rounded-[0.5px] bg-[#1e2024] ring-1 ring-inset ring-[#2e3036]"
             : "h-[4px] w-[5px] shrink-0 rounded-[0.5px] bg-[#1e2024] ring-1 ring-inset ring-[#2e3036]"
           : gallery
-            ? "h-[7px] w-[5px] shrink-0 rounded-[0.5px] bg-[#1e2024] ring-1 ring-inset ring-[#2e3036]"
-            : "h-[5px] w-[4px] shrink-0 rounded-[0.5px] bg-[#1e2024] ring-1 ring-inset ring-[#2e3036]"
+            ? "h-[6px] w-[3.5px] shrink-0 rounded-[0.5px] bg-[#1e2024] ring-1 ring-inset ring-[#2e3036]"
+            : "h-[5px] w-[3px] shrink-0 rounded-[0.5px] bg-[#1e2024] ring-1 ring-inset ring-[#2e3036]"
       }
     />
   ));
@@ -387,8 +423,8 @@ function SprocketRail({
       <div
         className={
           gallery
-            ? "flex w-[12px] shrink-0 flex-col items-center justify-between gap-[3px] py-[8%]"
-            : "flex w-[9px] shrink-0 flex-col items-center justify-between gap-[2px] py-[8%]"
+            ? "flex w-[11px] shrink-0 flex-col items-center justify-evenly py-[5%]"
+            : "flex w-[9px] shrink-0 flex-col items-center justify-evenly py-[6%]"
         }
         aria-hidden
       >

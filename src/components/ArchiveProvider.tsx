@@ -8,9 +8,11 @@ import {
   getArchiveSnapshot,
   getServerArchiveSnapshot,
   saveAnalysis,
+  saveDevelopment,
   saveNoteOcrText,
   subscribeArchive,
   updateFrame,
+  updateRollFilmStock,
 } from "@/lib/archiveStore";
 import type { FilmRoll } from "@/lib/types";
 import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
@@ -23,7 +25,9 @@ type ArchiveContextValue = {
   addFrame: typeof addFrame;
   addNote: typeof addNote;
   saveNoteOcrText: typeof saveNoteOcrText;
+  saveDevelopment: typeof saveDevelopment;
   updateFrame: typeof updateFrame;
+  updateRollFilmStock: typeof updateRollFilmStock;
   generateContactSheet: typeof generateContactSheet;
   saveAnalysis: typeof saveAnalysis;
 };
@@ -46,7 +50,9 @@ export function ArchiveProvider({ children }: { children: ReactNode }) {
       addFrame,
       addNote,
       saveNoteOcrText,
+      saveDevelopment,
       updateFrame,
+      updateRollFilmStock,
       generateContactSheet,
       saveAnalysis,
     }),

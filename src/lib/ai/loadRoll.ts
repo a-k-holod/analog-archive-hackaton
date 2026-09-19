@@ -1,3 +1,4 @@
+import { normalizeFilmStockId } from "@/lib/filmCatalog";
 import type { FilmRoll, Frame } from "@/lib/types";
 import { mapNoteRow, type NoteRow } from "@/lib/notes";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -6,6 +7,7 @@ type RollRow = {
   id: string;
   name: string;
   film_stock: string | null;
+  film_stock_id: string | null;
   iso: string | null;
   camera: string | null;
   started_on: string | null;
@@ -33,7 +35,7 @@ export async function loadRollById(
   const { data: roll, error: rollError } = await supabase
     .from("rolls")
     .select(
-      "id, name, film_stock, iso, camera, started_on, contact_sheet_generated_at, created_at",
+      "id, name, film_stock, film_stock_id, iso, camera, started_on, contact_sheet_generated_at, created_at",
     )
     .eq("id", rollId)
     .maybeSingle();
@@ -46,7 +48,6 @@ export async function loadRollById(
   }
 
   const rollRow = roll as RollRow;
-
   const [{ data: frames, error: framesError }, { data: notes, error: notesError }] =
     await Promise.all([
       supabase
@@ -74,12 +75,14 @@ export async function loadRollById(
     id: rollRow.id,
     title: rollRow.name,
     filmStock: rollRow.film_stock ?? "",
+    filmStockId: normalizeFilmStockId(rollRow.film_stock_id),
     iso: rollRow.iso ?? "",
     camera: rollRow.camera ?? "",
     startedOn: rollRow.started_on ?? "",
     createdAt: rollRow.created_at,
     frames: ((frames ?? []) as FrameRow[]).map(mapFrame),
     notes: ((notes ?? []) as NoteRow[]).map(mapNoteRow),
+    development: null,
     contactSheetGeneratedAt: rollRow.contact_sheet_generated_at,
     analysis: null,
   };

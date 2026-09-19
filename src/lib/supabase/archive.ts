@@ -1,5 +1,10 @@
 import { createClient } from "@/lib/supabase/client";
 import {
+  buildDevelopmentUpsertRow,
+  pickDevelopmentForRoll,
+  type DevelopmentRow,
+} from "@/lib/developments";
+import {
   buildFrameUpdateRow,
   resolveFrameMetadata,
   type FrameMetadataPatch,
@@ -11,7 +16,15 @@ import {
   notePhotographPath,
   type NoteRow,
 } from "@/lib/notes";
-import type { FilmRoll, Frame, NewFrameInput, NewRollInput } from "@/lib/types";
+import { normalizeFilmStockId } from "@/lib/filmCatalog";
+import type {
+  DevelopmentRecordInput,
+  FilmRoll,
+  Frame,
+  NewFrameInput,
+  NewRollInput,
+  UpdateRollFilmStockInput,
+} from "@/lib/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const PHOTO_BUCKET = "photographs";
@@ -20,6 +33,7 @@ type RollRow = {
   id: string;
   name: string;
   film_stock: string | null;
+  film_stock_id: string | null;
   iso: string | null;
   camera: string | null;
   frame_count: number;
@@ -51,7 +65,7 @@ export async function fetchArchive(): Promise<FilmRoll[]> {
   const { data: rolls, error: rollsError } = await supabase
     .from("rolls")
     .select(
-      "id, name, film_stock, iso, camera, frame_count, started_on, contact_sheet_generated_at, created_at",
+      "id, name, film_stock, film_stock_id, iso, camera, frame_count, started_on, contact_sheet_generated_at, created_at",
     )
     .order("created_at", { ascending: false });
 
@@ -66,21 +80,31 @@ export async function fetchArchive(): Promise<FilmRoll[]> {
 
   const rollIds = rollRows.map((roll) => roll.id);
 
-  const [{ data: frames, error: framesError }, { data: notes, error: notesError }] =
-    await Promise.all([
-      supabase
-        .from("frames")
-        .select(
-          "id, roll_id, frame_number, image_url, title, location, aperture, shutter_speed, created_at",
-        )
-        .in("roll_id", rollIds)
-        .order("frame_number", { ascending: true }),
-      supabase
-        .from("notes")
-        .select("id, roll_id, frame_id, text, image_url, ocr_text, created_at")
-        .in("roll_id", rollIds)
-        .order("created_at", { ascending: true }),
-    ]);
+  const [
+    { data: frames, error: framesError },
+    { data: notes, error: notesError },
+    { data: developments, error: developmentsError },
+  ] = await Promise.all([
+    supabase
+      .from("frames")
+      .select(
+        "id, roll_id, frame_number, image_url, title, location, aperture, shutter_speed, created_at",
+      )
+      .in("roll_id", rollIds)
+      .order("frame_number", { ascending: true }),
+    supabase
+      .from("notes")
+      .select("id, roll_id, frame_id, text, image_url, ocr_text, created_at")
+      .in("roll_id", rollIds)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("developments")
+      .select(
+        "id, roll_id, developer, dilution, temperature, development_time, agitation, method, exposure_index, notes, source_recipe_id, created_at, updated_at",
+      )
+      .in("roll_id", rollIds)
+      .order("updated_at", { ascending: false }),
+  ]);
 
   if (framesError) {
     throw new Error(framesError.message);
@@ -88,11 +112,25 @@ export async function fetchArchive(): Promise<FilmRoll[]> {
   if (notesError) {
     throw new Error(notesError.message);
   }
+  if (developmentsError) {
+    throw new Error(developmentsError.message);
+  }
 
   const framesByRoll = groupBy((frames ?? []) as FrameRow[], (frame) => frame.roll_id);
   const notesByRoll = groupBy((notes ?? []) as NoteQueryRow[], (note) => note.roll_id);
+  const developmentsByRoll = groupBy(
+    (developments ?? []) as DevelopmentRow[],
+    (row) => row.roll_id,
+  );
 
-  return rollRows.map((roll) => mapRoll(roll, framesByRoll.get(roll.id) ?? [], notesByRoll.get(roll.id) ?? []));
+  return rollRows.map((roll) =>
+    mapRoll(
+      roll,
+      framesByRoll.get(roll.id) ?? [],
+      notesByRoll.get(roll.id) ?? [],
+      developmentsByRoll.get(roll.id) ?? [],
+    ),
+  );
 }
 
 export async function insertRoll(input: NewRollInput & { id: string; createdAt: string }): Promise<void> {
@@ -101,6 +139,7 @@ export async function insertRoll(input: NewRollInput & { id: string; createdAt: 
     id: input.id,
     name: input.title.trim(),
     film_stock: emptyToNull(input.filmStock),
+    film_stock_id: normalizeFilmStockId(input.filmStockId),
     iso: emptyToNull(input.iso),
     camera: emptyToNull(input.camera),
     started_on: emptyToNull(input.startedOn),
@@ -108,6 +147,25 @@ export async function insertRoll(input: NewRollInput & { id: string; createdAt: 
     contact_sheet_generated_at: null,
     created_at: input.createdAt,
   });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function updateRollFilmStockMetadata(
+  rollId: string,
+  input: UpdateRollFilmStockInput,
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("rolls")
+    .update({
+      film_stock: emptyToNull(input.filmStock),
+      film_stock_id: normalizeFilmStockId(input.filmStockId),
+      iso: emptyToNull(input.iso),
+    })
+    .eq("id", rollId);
 
   if (error) {
     throw new Error(error.message);
@@ -217,6 +275,26 @@ export async function updateContactSheetGeneratedAt(rollId: string, generatedAt:
   }
 }
 
+/**
+ * Insert or update the photographer's personal development record for a roll.
+ * Never writes to the bundled manufacturer catalog.
+ */
+export async function upsertDevelopmentRecord(params: {
+  id: string;
+  rollId: string;
+  input: DevelopmentRecordInput;
+  createdAt: string;
+  updatedAt: string;
+}): Promise<void> {
+  const supabase = createClient();
+  const row = buildDevelopmentUpsertRow(params);
+  const { error } = await supabase.from("developments").upsert(row, { onConflict: "id" });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 export async function uploadPhotograph(params: {
   rollId: string;
   frameId: string;
@@ -255,17 +333,24 @@ function publicPhotographUrl(supabase: SupabaseClient, path: string): string {
   return data.publicUrl;
 }
 
-function mapRoll(roll: RollRow, frames: FrameRow[], notes: NoteQueryRow[]): FilmRoll {
+function mapRoll(
+  roll: RollRow,
+  frames: FrameRow[],
+  notes: NoteQueryRow[],
+  developments: DevelopmentRow[],
+): FilmRoll {
   return {
     id: roll.id,
     title: roll.name,
     filmStock: roll.film_stock ?? "",
+    filmStockId: normalizeFilmStockId(roll.film_stock_id),
     iso: roll.iso ?? "",
     camera: roll.camera ?? "",
     startedOn: roll.started_on ?? "",
     createdAt: roll.created_at,
     frames: frames.map(mapFrame),
     notes: notes.map(mapNoteRow),
+    development: pickDevelopmentForRoll(developments),
     contactSheetGeneratedAt: roll.contact_sheet_generated_at,
     analysis: null,
   };

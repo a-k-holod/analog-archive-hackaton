@@ -2,6 +2,7 @@
 
 import { useArchive } from "@/components/ArchiveProvider";
 import { Button } from "@/components/Button";
+import { FilmStockPicker } from "@/components/FilmStockPicker";
 import { Field, inputClassName } from "@/components/Field";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,6 +12,7 @@ export default function NewRollPage() {
   const router = useRouter();
   const { createRoll } = useArchive();
   const [title, setTitle] = useState("");
+  const [filmStockId, setFilmStockId] = useState<string | null>(null);
   const [filmStock, setFilmStock] = useState("");
   const [iso, setIso] = useState("");
   const [camera, setCamera] = useState("");
@@ -28,7 +30,14 @@ export default function NewRollPage() {
     setBusy(true);
     setError(null);
     try {
-      const roll = await createRoll({ title, filmStock, iso, camera, startedOn });
+      const roll = await createRoll({
+        title,
+        filmStock,
+        filmStockId,
+        iso,
+        camera,
+        startedOn,
+      });
       router.push(`/rolls/${roll.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create this roll.");
@@ -58,16 +67,18 @@ export default function NewRollPage() {
             autoFocus
           />
         </Field>
-        <div className="grid gap-7 sm:grid-cols-2">
-          <Field label="Film stock">
-            <input
-              className={inputClassName}
-              value={filmStock}
-              onChange={(event) => setFilmStock(event.target.value)}
-              placeholder="Ilford HP5 Plus"
-            />
-          </Field>
-          <Field label="ISO">
+        <FilmStockPicker
+          filmStock={filmStock}
+          filmStockId={filmStockId}
+          iso={iso}
+          onChange={(selection) => {
+            setFilmStock(selection.filmStock);
+            setFilmStockId(selection.filmStockId);
+            setIso(selection.iso);
+          }}
+        />
+        <div className="max-w-32">
+          <Field label="Exposure index">
             <input
               className={`${inputClassName} font-mono tracking-wide`}
               value={iso}

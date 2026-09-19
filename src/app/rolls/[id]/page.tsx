@@ -4,6 +4,8 @@ import { AnalogFrame } from "@/components/AnalogFrame";
 import { useArchive } from "@/components/ArchiveProvider";
 import { BatchImport } from "@/components/BatchImport";
 import { Button } from "@/components/Button";
+import { DevelopmentSection } from "@/components/DevelopmentSection";
+import { FilmStockPicker } from "@/components/FilmStockPicker";
 import { Field, inputClassName, textareaClassName } from "@/components/Field";
 import { HandwrittenNoteCapture } from "@/components/HandwrittenNoteCapture";
 import { HandwrittenNoteOcr } from "@/components/HandwrittenNoteOcr";
@@ -16,8 +18,19 @@ import {
   type FilmEdgeDetection,
 } from "@/lib/analogFrame";
 import type { FrameMetadataPatch } from "@/lib/frames";
+import { resolveRollFilmStock } from "@/lib/filmCatalog";
+import { formatFilmProcess } from "@/lib/filmStockSelection";
 import { fileToCompressedJpeg } from "@/lib/image";
-import type { AnalyzePayload, FilmRoll, NewFrameInput, NewNoteInput, RollAnalysis } from "@/lib/types";
+import type {
+  AnalyzePayload,
+  DevelopmentRecord,
+  DevelopmentRecordInput,
+  FilmRoll,
+  NewFrameInput,
+  NewNoteInput,
+  RollAnalysis,
+  UpdateRollFilmStockInput,
+} from "@/lib/types";
 import Link from "next/link";
 import { use, useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
@@ -33,7 +46,9 @@ export default function RollPage({ params }: PageProps) {
     addFrame,
     addNote,
     saveNoteOcrText,
+    saveDevelopment,
     updateFrame,
+    updateRollFilmStock,
     generateContactSheet,
     saveAnalysis,
   } = useArchive();
@@ -66,7 +81,9 @@ export default function RollPage({ params }: PageProps) {
       onAddFrame={addFrame}
       onAddNote={addNote}
       onSaveNoteOcrText={saveNoteOcrText}
+      onSaveDevelopment={saveDevelopment}
       onUpdateFrame={updateFrame}
+      onUpdateRollFilmStock={updateRollFilmStock}
       onGenerateContactSheet={generateContactSheet}
       onSaveAnalysis={saveAnalysis}
     />
@@ -78,7 +95,9 @@ function RollDetail({
   onAddFrame,
   onAddNote,
   onSaveNoteOcrText,
+  onSaveDevelopment,
   onUpdateFrame,
+  onUpdateRollFilmStock,
   onGenerateContactSheet,
   onSaveAnalysis,
 }: {
@@ -86,7 +105,12 @@ function RollDetail({
   onAddFrame: (rollId: string, input: NewFrameInput) => Promise<void>;
   onAddNote: (rollId: string, input: NewNoteInput) => Promise<void>;
   onSaveNoteOcrText: (rollId: string, noteId: string, ocrText: string) => Promise<void>;
+  onSaveDevelopment: (rollId: string, input: DevelopmentRecordInput) => Promise<DevelopmentRecord>;
   onUpdateFrame: (rollId: string, frameId: string, patch: FrameMetadataPatch) => Promise<void>;
+  onUpdateRollFilmStock: (
+    rollId: string,
+    input: UpdateRollFilmStockInput,
+  ) => Promise<void>;
   onGenerateContactSheet: (rollId: string) => Promise<void>;
   onSaveAnalysis: (rollId: string, analysis: RollAnalysis) => Promise<void>;
 }) {
@@ -144,9 +168,13 @@ function RollDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- roll.frames membership via frameIdsKey
   }, [roll.id, frameIdsKey]);
 
+  const stockReference = resolveRollFilmStock(roll);
+  const stock = stockReference.stock;
   const metaParts = [
-    roll.filmStock,
-    roll.iso ? `ISO ${roll.iso}` : null,
+    stock ? `${stock.manufacturer} / ${stock.name}` : roll.filmStock,
+    stock ? `ISO ${stock.boxSpeed}` : roll.iso ? `ISO ${roll.iso}` : null,
+    stock ? formatFilmProcess(stock.process) : null,
+    stock && roll.iso && roll.iso !== String(stock.boxSpeed) ? `EI ${roll.iso}` : null,
     roll.camera,
     roll.startedOn ? `started ${roll.startedOn}` : null,
   ].filter(Boolean);
@@ -165,10 +193,12 @@ function RollDetail({
         ) : (
           <p className="mt-4 text-sm text-muted">No technical notes yet</p>
         )}
+        <FilmStockEditor roll={roll} onSave={onUpdateRollFilmStock} />
       </header>
 
       <FramesSection roll={roll} onAddFrame={onAddFrame} onOpenFrame={openViewer} />
       <NotesSection roll={roll} onAddNote={onAddNote} onSaveNoteOcrText={onSaveNoteOcrText} />
+      <DevelopmentSection roll={roll} onSaveDevelopment={onSaveDevelopment} />
       <ContactSheetSection
         roll={roll}
         onGenerate={onGenerateContactSheet}
@@ -186,6 +216,64 @@ function RollDetail({
         />
       ) : null}
     </div>
+  );
+}
+
+function FilmStockEditor({
+  roll,
+  onSave,
+}: {
+  roll: FilmRoll;
+  onSave: (rollId: string, input: UpdateRollFilmStockInput) => Promise<void>;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const [selection, setSelection] = useState<UpdateRollFilmStockInput>({
+    filmStock: roll.filmStock,
+    filmStockId: roll.filmStockId,
+    iso: roll.iso,
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(roll.id, selection);
+      if (detailsRef.current) detailsRef.current.open = false;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update this film stock.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <details ref={detailsRef} className="mt-6 max-w-lg border-t border-line pt-4">
+      <summary className="meta cursor-pointer outline-none marker:text-muted">
+        Edit film stock
+      </summary>
+      <form onSubmit={onSubmit} className="mt-6 space-y-6 pb-2">
+        <FilmStockPicker {...selection} onChange={setSelection} />
+        <div className="max-w-32">
+          <Field label="Exposure index">
+            <input
+              className={`${inputClassName} font-mono tracking-wide`}
+              value={selection.iso}
+              onChange={(event) =>
+                setSelection((current) => ({ ...current, iso: event.target.value }))
+              }
+              placeholder="400"
+            />
+          </Field>
+        </div>
+        <Button type="submit" disabled={busy}>
+          {busy ? "Saving…" : "Save film stock"}
+        </Button>
+        {error ? <p className="text-sm text-danger">{error}</p> : null}
+      </form>
+    </details>
   );
 }
 
@@ -449,8 +537,8 @@ function NotesSection({
         <p className="section-kicker">Process</p>
         <h2 className="mt-2 font-serif text-2xl tracking-tight sm:text-[1.75rem]">Notes</h2>
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
-          Write it on paper under the safelight. Archive the page later. Development notes, exposure
-          observations, locations, and printing reminders travel with this roll.
+          Write it on paper under the safelight. Archive the page later. Exposure observations,
+          locations, and printing reminders travel with this roll.
         </p>
       </div>
 

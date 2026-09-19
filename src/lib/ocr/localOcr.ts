@@ -6,6 +6,9 @@
  * → confidence + readability scoring → optional conservative darkroom cleanup.
  * The stored photograph is never modified; OCR text is a derived interpretation.
  *
+ * Developer logs: `localStorage.setItem("analog-archive:debug-ocr", "1")` then
+ * re-run Read handwriting. Each hypothesis logs variant, size, raw text, scores.
+ *
  * First run downloads ~8–12 MB (engine + eng/pol language data) and caches
  * traineddata in IndexedDB. Handwriting accuracy is approximate — suitable
  * for search discovery, not archival transcription.
@@ -131,22 +134,28 @@ export async function extractHandwritingText(
         });
 
         const { data } = await worker.recognize(canvas);
-        const softened = softenDarkroomOcrText(data.text ?? "");
+        const rawText = data.text ?? "";
+        const softened = softenDarkroomOcrText(rawText);
         const { qualityScore, readableRatio } = scoreOcrHypothesis(softened, data.confidence ?? 0);
-        hypotheses.push({
+        const hypothesis: ScoredOcrHypothesis = {
           text: softened,
           confidence: softened ? (data.confidence ?? 0) : 0,
           variantId: variant.id,
           pageSegMode: Number(psm),
           qualityScore,
           readableRatio,
-        });
+        };
+        logOcrHypothesis(variant, hypothesis, rawText);
+        hypotheses.push(hypothesis);
       }
     }
 
     setProgress("scoring", 0.97, "Choosing clearest reading…");
     const usable = hypotheses.filter((h) => isUsableOcrHypothesis(h));
     const best = pickBestHypothesis(usable.length > 0 ? usable : hypotheses);
+    if (isOcrDebugEnabled()) {
+      console.info("[ocr-best]", best ? { ...best, usable: isUsableOcrHypothesis(best) } : null);
+    }
 
     if (!best || !best.text) {
       return { text: "", confidence: 0 };
@@ -187,8 +196,8 @@ async function loadRgbaImage(source: string | Blob): Promise<{
         })
       : source;
 
-  // createImageBitmap applies EXIF orientation for camera JPEGs when available.
-  const bitmap = await createImageBitmap(blob);
+  // Prefer EXIF-aware decode; fall back if the option is unsupported.
+  const bitmap = await createImageBitmapWithOrientation(blob);
   try {
     const canvas = document.createElement("canvas");
     canvas.width = bitmap.width;
@@ -207,6 +216,46 @@ async function loadRgbaImage(source: string | Blob): Promise<{
   } finally {
     bitmap.close();
   }
+}
+
+async function createImageBitmapWithOrientation(blob: Blob): Promise<ImageBitmap> {
+  try {
+    return await createImageBitmap(blob, { imageOrientation: "from-image" });
+  } catch {
+    return createImageBitmap(blob);
+  }
+}
+
+/** Enable with `localStorage.setItem("analog-archive:debug-ocr", "1")` or `globalThis.__ANALOG_OCR_DEBUG__ = true`. */
+function isOcrDebugEnabled(): boolean {
+  const flagged = (globalThis as { __ANALOG_OCR_DEBUG__?: unknown }).__ANALOG_OCR_DEBUG__;
+  if (flagged) return true;
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem("analog-archive:debug-ocr") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function logOcrHypothesis(
+  variant: PreprocessVariant,
+  hypothesis: ScoredOcrHypothesis,
+  rawText: string,
+): void {
+  if (!isOcrDebugEnabled()) return;
+  const compact = hypothesis.text.replace(/\s+/g, "");
+  console.info("[ocr-hypothesis]", {
+    variant: variant.id,
+    width: variant.image.width,
+    height: variant.image.height,
+    rawText,
+    text: hypothesis.text,
+    confidence: hypothesis.confidence,
+    qualityScore: hypothesis.qualityScore,
+    readableRatio: hypothesis.readableRatio,
+    compactLength: compact.length,
+    usable: isUsableOcrHypothesis(hypothesis),
+  });
 }
 
 function grayToCanvas(gray: {

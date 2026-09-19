@@ -1,5 +1,7 @@
-import { normalizeNoteFields } from "@/lib/notes";
-import type { ArchiveState, FilmRoll, Frame } from "@/lib/types";
+import { normalizeDevelopmentRecord } from "./developments.ts";
+import { normalizeFilmStockId } from "./filmCatalog.ts";
+import { normalizeNoteFields } from "./notes.ts";
+import type { ArchiveState, FilmRoll, Frame } from "./types.ts";
 
 const STORAGE_KEY = "analog-archive:v1";
 
@@ -20,16 +22,23 @@ export function loadArchive(): ArchiveState {
     }
 
     return {
-      rolls: parsed.rolls.map(normalizeRoll),
+      rolls: parsed.rolls.map(normalizeStoredRoll),
     };
   } catch {
     return { rolls: [] };
   }
 }
 
-function normalizeRoll(roll: FilmRoll & { frames: Array<Frame & { imageDataUrl?: string | null }> }): FilmRoll {
+export function normalizeStoredRoll(
+  roll: Omit<FilmRoll, "filmStockId" | "development" | "frames"> & {
+    filmStockId?: unknown;
+    development?: unknown;
+    frames: Array<Frame & { imageDataUrl?: string | null }>;
+  },
+): FilmRoll {
   return {
     ...roll,
+    filmStockId: normalizeFilmStockId(roll.filmStockId),
     frames: roll.frames.map((frame) => {
       const legacy = frame as Frame & { imageDataUrl?: string | null };
       return {
@@ -38,6 +47,7 @@ function normalizeRoll(roll: FilmRoll & { frames: Array<Frame & { imageDataUrl?:
       };
     }),
     notes: (roll.notes ?? []).map(normalizeNoteFields),
+    development: normalizeDevelopmentRecord(roll.development),
   };
 }
 

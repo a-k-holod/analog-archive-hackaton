@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  adaptiveThreshold,
   buildPreprocessVariants,
   cropDocumentMargins,
+  darkPixelRatio,
   detectGridLines,
+  ensureReadableScale,
+  isInvertedBinaryRaster,
   pickPeriodicDarkLines,
   rgbaToGray,
   stretchContrast,
@@ -132,17 +136,64 @@ test("cropDocumentMargins removes empty borders around content", () => {
   assert.ok(cropped.height >= 20);
 });
 
-test("buildPreprocessVariants always includes contrast path and never mutates input buffer", () => {
+test("buildPreprocessVariants always includes source + contrast and never mutates input buffer", () => {
   const paper = makeGridPaper(120, 120, 15);
   const rgba = rgbaFromGray(paper);
   const before = rgba.data[0];
   const variants = buildPreprocessVariants(rgba);
+  assert.ok(variants.some((v) => v.id === "source"));
   assert.ok(variants.some((v) => v.id === "contrast"));
-  assert.ok(variants.some((v) => v.id === "adaptive"));
   assert.ok(variants.some((v) => v.gridRemoved));
+  assert.ok(variants.every((v) => v.id === "source" || v.id === "contrast" || v.id === "grid_suppressed"));
   assert.equal(rgba.data[0], before);
   // Round-trip gray helper stays consistent.
   const roundTrip = rgbaToGray(rgba);
   assert.equal(roundTrip.width, 120);
   assert.equal(roundTrip.pixels[0], paper.pixels[0]);
+});
+
+test("adaptiveThreshold keeps bright paper white and dark ink black", () => {
+  const gray = solidGray(64, 64, 240);
+  for (let x = 8; x < 56; x += 1) {
+    for (let t = -1; t <= 1; t += 1) {
+      gray.pixels[(32 + t) * 64 + x] = 25;
+    }
+  }
+  const binary = adaptiveThreshold(gray, 15, 0.28);
+  // Paper stays light — the old mean-as-std formula inverted this to black.
+  assert.ok(binary.pixels[2]! > 200);
+  assert.ok(binary.pixels[32 * 64 + 30]! < 40);
+  assert.ok(darkPixelRatio(binary) < 0.2);
+});
+
+test("ensureReadableScale downscales large images and does not upscale small ones", () => {
+  const large = solidGray(2400, 1800, 200);
+  const scaled = ensureReadableScale(large);
+  assert.ok(Math.max(scaled.width, scaled.height) <= 1600);
+  assert.ok(scaled.width < 2400);
+
+  const small = solidGray(640, 480, 200);
+  const untouched = ensureReadableScale(small);
+  assert.equal(untouched.width, 640);
+  assert.equal(untouched.height, 480);
+});
+
+test("isInvertedBinaryRaster catches inverted pages, not dark-surroundings photos", () => {
+  const inverted = solidGray(40, 40, 0);
+  for (let x = 4; x < 36; x += 1) {
+    inverted.pixels[20 * 40 + x] = 255;
+  }
+  assert.equal(isInvertedBinaryRaster(inverted), true);
+
+  const photo = solidGray(80, 80, 90);
+  for (let y = 18; y < 62; y += 1) {
+    for (let x = 18; x < 62; x += 1) {
+      photo.pixels[y * 80 + x] = 245;
+    }
+  }
+  assert.equal(isInvertedBinaryRaster(photo), false);
+
+  const variants = buildPreprocessVariants(rgbaFromGray(photo));
+  assert.ok(variants.length >= 1);
+  assert.ok(variants.every((v) => !isInvertedBinaryRaster(v.image)));
 });
