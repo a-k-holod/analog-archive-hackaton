@@ -1,4 +1,6 @@
+import { applyFrameMetadata, type FrameMetadataPatch } from "@/lib/frames";
 import { createId } from "@/lib/ids";
+import { isPersistableNote } from "@/lib/notes";
 import { loadArchive, saveArchive } from "@/lib/storage";
 import {
   fetchArchive,
@@ -6,10 +8,13 @@ import {
   insertNote,
   insertRoll,
   updateContactSheetGeneratedAt,
+  updateFrameMetadata,
+  updateNoteOcrText,
+  uploadNotePhotograph,
   uploadPhotograph,
 } from "@/lib/supabase/archive";
 import { hasConfiguredSupabaseEnv } from "@/lib/supabase/env";
-import type { FilmRoll, NewFrameInput, NewRollInput, RollAnalysis } from "@/lib/types";
+import type { FilmRoll, NewFrameInput, NewNoteInput, NewRollInput, RollAnalysis } from "@/lib/types";
 
 export type ArchiveSnapshot = {
   ready: boolean;
@@ -139,24 +144,42 @@ export async function addFrame(rollId: string, input: NewFrameInput): Promise<vo
   );
 }
 
-export async function addNote(rollId: string, body: string): Promise<void> {
+export async function addNote(rollId: string, input: NewNoteInput): Promise<void> {
   await ensureHydrated();
 
-  const trimmed = body.trim();
-  if (trimmed.length === 0) {
-    return;
+  const trimmed = input.body.trim();
+  if (trimmed.length === 0 && !input.imageBlob) {
+    throw new Error("A note needs text or a photograph.");
   }
 
   const noteId = createId();
   const createdAt = new Date().toISOString();
+  let imageUrl: string | null = null;
 
   if (canUseSupabase()) {
+    // Upload the archival photograph before inserting the row so a failed
+    // upload never leaves a note that looks saved without its artifact.
+    if (input.imageBlob) {
+      imageUrl = await uploadNotePhotograph({
+        rollId,
+        noteId,
+        blob: input.imageBlob,
+      });
+    }
+
     await insertNote({
       noteId,
       rollId,
       body: trimmed,
+      imageUrl,
       createdAt,
     });
+  } else if (input.imageBlob) {
+    imageUrl = await blobToDataUrl(input.imageBlob);
+  }
+
+  if (!isPersistableNote(trimmed, imageUrl)) {
+    throw new Error("A note needs text or a photograph.");
   }
 
   commit(
@@ -169,12 +192,84 @@ export async function addNote(rollId: string, body: string): Promise<void> {
               {
                 id: noteId,
                 body: trimmed,
+                imageUrl,
+                ocrText: "",
                 createdAt,
               },
             ],
             analysis: null,
           }
         : roll,
+    ),
+  );
+}
+
+export async function saveNoteOcrText(rollId: string, noteId: string, ocrText: string): Promise<void> {
+  await ensureHydrated();
+
+  const roll = snapshot.rolls.find((item) => item.id === rollId);
+  if (!roll) {
+    throw new Error("Roll not found.");
+  }
+  if (!roll.notes.some((note) => note.id === noteId)) {
+    throw new Error("Note not found.");
+  }
+
+  const normalized = ocrText.trim();
+
+  if (canUseSupabase()) {
+    await updateNoteOcrText({ noteId, ocrText: normalized });
+  }
+
+  commit(
+    snapshot.rolls.map((item) =>
+      item.id === rollId
+        ? {
+            ...item,
+            notes: item.notes.map((note) =>
+              note.id === noteId ? { ...note, ocrText: normalized } : note,
+            ),
+          }
+        : item,
+    ),
+  );
+}
+
+/**
+ * Update caption / location / exposure on an existing frame.
+ * Preserves id, number, and imageUrl — never inserts a duplicate frame.
+ */
+export async function updateFrame(
+  rollId: string,
+  frameId: string,
+  patch: FrameMetadataPatch,
+): Promise<void> {
+  await ensureHydrated();
+
+  const roll = snapshot.rolls.find((item) => item.id === rollId);
+  if (!roll) {
+    throw new Error("Roll not found.");
+  }
+
+  const current = roll.frames.find((frame) => frame.id === frameId);
+  if (!current) {
+    throw new Error("Frame not found.");
+  }
+
+  if (canUseSupabase()) {
+    await updateFrameMetadata({ frameId, current, patch });
+  }
+
+  const nextFrame = applyFrameMetadata(current, patch);
+
+  commit(
+    snapshot.rolls.map((item) =>
+      item.id === rollId
+        ? {
+            ...item,
+            frames: item.frames.map((frame) => (frame.id === frameId ? nextFrame : frame)),
+          }
+        : item,
     ),
   );
 }

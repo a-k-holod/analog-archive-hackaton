@@ -1,13 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --paper: #eef0f3;
-  --ink: #16181c;
-  --muted: #5d646e;
-  --line: #c5cad2;
-  --surface: #fbfbfc;
+  /* Warm light neutral — archive paper, not cream SaaS */
+  --paper: #eeece8;
+  --ink: #14161a;
+  --muted: #5c6058;
+  --line: #c8c4bc;
+  --surface: #f7f6f3;
   --film: #14161a;
   --cobalt: #2a4d73;
+  --matte: #d4d0c8;
+  --danger: #8a2a2a;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
@@ -19,8 +22,11 @@
   --color-surface: var(--surface);
   --color-film: var(--film);
   --color-cobalt: var(--cobalt);
+  --color-matte: var(--matte);
+  --color-danger: var(--danger);
   --font-sans: var(--font-source-sans), "Source Sans 3", sans-serif;
   --font-serif: var(--font-source-serif), "Source Serif 4", serif;
+  --font-mono: var(--font-ibm-plex-mono), "IBM Plex Mono", ui-monospace, monospace;
 }
 
 html,
@@ -38,6 +44,36 @@ body {
   outline-offset: 3px;
 }
 
+/* Editorial metadata — technical photographic facts */
+.meta {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.section-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* Quiet loading pulse for empty/loading copy */
+@keyframes archive-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.loading-pulse {
+  animation: archive-pulse 1.4s var(--ease-out) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -45,5 +81,10 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .loading-pulse {
+    animation: none;
+    opacity: 0.7;
   }
 }

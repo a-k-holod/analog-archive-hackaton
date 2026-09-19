@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Tesseract.js uses workers/WASM; keep it client-bundled, not server-resolved.
+  serverExternalPackages: ["tesseract.js"],
 };
 
 export default nextConfig;

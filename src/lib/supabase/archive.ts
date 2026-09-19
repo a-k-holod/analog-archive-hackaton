@@ -1,5 +1,17 @@
 import { createClient } from "@/lib/supabase/client";
-import type { FilmRoll, Frame, Note, NewFrameInput, NewRollInput } from "@/lib/types";
+import {
+  buildFrameUpdateRow,
+  resolveFrameMetadata,
+  type FrameMetadataPatch,
+} from "@/lib/frames";
+import {
+  buildNoteInsertRow,
+  buildNoteOcrUpdate,
+  mapNoteRow,
+  notePhotographPath,
+  type NoteRow,
+} from "@/lib/notes";
+import type { FilmRoll, Frame, NewFrameInput, NewRollInput } from "@/lib/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const PHOTO_BUCKET = "photographs";
@@ -28,12 +40,9 @@ type FrameRow = {
   created_at: string;
 };
 
-type NoteRow = {
-  id: string;
+type NoteQueryRow = NoteRow & {
   roll_id: string;
   frame_id: string | null;
-  text: string | null;
-  created_at: string;
 };
 
 export async function fetchArchive(): Promise<FilmRoll[]> {
@@ -68,7 +77,7 @@ export async function fetchArchive(): Promise<FilmRoll[]> {
         .order("frame_number", { ascending: true }),
       supabase
         .from("notes")
-        .select("id, roll_id, frame_id, text, created_at")
+        .select("id, roll_id, frame_id, text, image_url, ocr_text, created_at")
         .in("roll_id", rollIds)
         .order("created_at", { ascending: true }),
     ]);
@@ -81,7 +90,7 @@ export async function fetchArchive(): Promise<FilmRoll[]> {
   }
 
   const framesByRoll = groupBy((frames ?? []) as FrameRow[], (frame) => frame.roll_id);
-  const notesByRoll = groupBy((notes ?? []) as NoteRow[], (note) => note.roll_id);
+  const notesByRoll = groupBy((notes ?? []) as NoteQueryRow[], (note) => note.roll_id);
 
   return rollRows.map((roll) => mapRoll(roll, framesByRoll.get(roll.id) ?? [], notesByRoll.get(roll.id) ?? []));
 }
@@ -149,16 +158,47 @@ export async function insertNote(params: {
   noteId: string;
   rollId: string;
   body: string;
+  imageUrl: string | null;
   createdAt: string;
 }): Promise<void> {
   const supabase = createClient();
-  const { error } = await supabase.from("notes").insert({
-    id: params.noteId,
-    roll_id: params.rollId,
-    frame_id: null,
-    text: params.body,
-    created_at: params.createdAt,
-  });
+  const { error } = await supabase.from("notes").insert(buildNoteInsertRow(params));
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function updateNoteOcrText(params: {
+  noteId: string;
+  ocrText: string;
+}): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("notes")
+    .update(buildNoteOcrUpdate(params.ocrText))
+    .eq("id", params.noteId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Update metadata on an existing frame row.
+ * Never inserts; never changes id, frame_number, or image_url.
+ */
+export async function updateFrameMetadata(params: {
+  frameId: string;
+  current: Frame;
+  patch: FrameMetadataPatch;
+}): Promise<void> {
+  const fields = resolveFrameMetadata(params.current, params.patch);
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("frames")
+    .update(buildFrameUpdateRow(fields))
+    .eq("id", params.frameId);
 
   if (error) {
     throw new Error(error.message);
@@ -184,8 +224,21 @@ export async function uploadPhotograph(params: {
 }): Promise<string> {
   const supabase = createClient();
   const path = `${params.rollId}/${params.frameId}.jpg`;
+  return uploadJpeg(supabase, path, params.blob);
+}
 
-  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, params.blob, {
+export async function uploadNotePhotograph(params: {
+  rollId: string;
+  noteId: string;
+  blob: Blob;
+}): Promise<string> {
+  const supabase = createClient();
+  const path = notePhotographPath(params.rollId, params.noteId);
+  return uploadJpeg(supabase, path, params.blob);
+}
+
+async function uploadJpeg(supabase: SupabaseClient, path: string, blob: Blob): Promise<string> {
+  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, blob, {
     contentType: "image/jpeg",
     upsert: true,
   });
@@ -202,7 +255,7 @@ function publicPhotographUrl(supabase: SupabaseClient, path: string): string {
   return data.publicUrl;
 }
 
-function mapRoll(roll: RollRow, frames: FrameRow[], notes: NoteRow[]): FilmRoll {
+function mapRoll(roll: RollRow, frames: FrameRow[], notes: NoteQueryRow[]): FilmRoll {
   return {
     id: roll.id,
     title: roll.name,
@@ -212,7 +265,7 @@ function mapRoll(roll: RollRow, frames: FrameRow[], notes: NoteRow[]): FilmRoll 
     startedOn: roll.started_on ?? "",
     createdAt: roll.created_at,
     frames: frames.map(mapFrame),
-    notes: notes.map(mapNote),
+    notes: notes.map(mapNoteRow),
     contactSheetGeneratedAt: roll.contact_sheet_generated_at,
     analysis: null,
   };
@@ -228,14 +281,6 @@ function mapFrame(frame: FrameRow): Frame {
     aperture: frame.aperture ?? "",
     shutterSpeed: frame.shutter_speed ?? "",
     createdAt: frame.created_at,
-  };
-}
-
-function mapNote(note: NoteRow): Note {
-  return {
-    id: note.id,
-    body: note.text ?? "",
-    createdAt: note.created_at,
   };
 }
 

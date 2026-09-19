@@ -6,7 +6,7 @@ export type CompressedPhotograph = {
   previewUrl: string;
 };
 
-export async function fileToCompressedJpeg(file: File): Promise<CompressedPhotograph> {
+export async function fileToCompressedJpeg(file: Blob): Promise<CompressedPhotograph> {
   const objectUrl = URL.createObjectURL(file);
 
   try {

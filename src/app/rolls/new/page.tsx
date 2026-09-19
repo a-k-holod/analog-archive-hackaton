@@ -3,6 +3,7 @@
 import { useArchive } from "@/components/ArchiveProvider";
 import { Button } from "@/components/Button";
 import { Field, inputClassName } from "@/components/Field";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -36,11 +37,18 @@ export default function NewRollPage() {
   }
 
   return (
-    <div className="max-w-xl">
-      <h1 className="font-serif text-4xl tracking-tight">New roll</h1>
-      <p className="mt-2 text-muted">Record the film, camera, and when you started shooting.</p>
+    <div className="max-w-lg">
+      <Link href="/" className="meta transition-colors hover:text-ink">
+        ← Archive
+      </Link>
+      <h1 className="mt-4 font-serif text-[2.5rem] leading-none tracking-tight sm:text-5xl">
+        New roll
+      </h1>
+      <p className="mt-3 text-[0.95rem] leading-relaxed text-muted">
+        Record the film, camera, and when you started shooting.
+      </p>
 
-      <form onSubmit={onSubmit} className="mt-8 space-y-5">
+      <form onSubmit={onSubmit} className="mt-10 space-y-7">
         <Field label="Roll name">
           <input
             className={inputClassName}
@@ -50,7 +58,7 @@ export default function NewRollPage() {
             autoFocus
           />
         </Field>
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-7 sm:grid-cols-2">
           <Field label="Film stock">
             <input
               className={inputClassName}
@@ -61,7 +69,7 @@ export default function NewRollPage() {
           </Field>
           <Field label="ISO">
             <input
-              className={inputClassName}
+              className={`${inputClassName} font-mono tracking-wide`}
               value={iso}
               onChange={(event) => setIso(event.target.value)}
               placeholder="400"
@@ -79,15 +87,17 @@ export default function NewRollPage() {
         <Field label="Started on">
           <input
             type="date"
-            className={inputClassName}
+            className={`${inputClassName} font-mono tracking-wide`}
             value={startedOn}
             onChange={(event) => setStartedOn(event.target.value)}
           />
         </Field>
-        {error ? <p className="text-sm text-[#8a2a2a]">{error}</p> : null}
-        <Button type="submit" disabled={busy}>
-          {busy ? "Creating…" : "Create roll"}
-        </Button>
+        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        <div className="pt-2">
+          <Button type="submit" disabled={busy}>
+            {busy ? "Creating…" : "Create roll"}
+          </Button>
+        </div>
       </form>
     </div>
   );

@@ -1,3 +1,4 @@
+import { normalizeNoteFields } from "@/lib/notes";
 import type { ArchiveState, FilmRoll, Frame } from "@/lib/types";
 
 const STORAGE_KEY = "analog-archive:v1";
@@ -36,6 +37,7 @@ function normalizeRoll(roll: FilmRoll & { frames: Array<Frame & { imageDataUrl?:
         imageUrl: frame.imageUrl ?? legacy.imageDataUrl ?? null,
       };
     }),
+    notes: (roll.notes ?? []).map(normalizeNoteFields),
   };
 }
 

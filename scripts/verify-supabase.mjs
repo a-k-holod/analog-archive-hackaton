@@ -21,13 +21,27 @@ const supabase = createClient(url, key, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const { error } = await supabase.auth.getSession();
+const { error: sessionError } = await supabase.auth.getSession();
 
-if (error) {
-  fail(`Could not reach Supabase: ${error.message}`);
+if (sessionError) {
+  fail(`Could not reach Supabase: ${sessionError.message}`);
 }
 
-console.log(`OK — connected to ${new URL(url).host}`);
+const { error: notesError } = await supabase
+  .from("notes")
+  .select("id, text, image_url, ocr_text")
+  .limit(1);
+
+if (notesError) {
+  if (/ocr_text/i.test(notesError.message)) {
+    fail(
+      `notes.ocr_text is missing. Apply supabase/migrations/20260919150000_notes_ocr_text.sql (DATABASE_URL=... npm run db:migrate -- --only 20260919150000_notes_ocr_text.sql).`,
+    );
+  }
+  fail(`notes schema check failed: ${notesError.message}`);
+}
+
+console.log(`OK — connected to ${new URL(url).host}; notes.ocr_text present`);
 
 function loadEnvLocal() {
   const path = resolve(process.cwd(), ".env.local");

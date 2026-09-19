@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test src/lib/*.test.ts",
+    "test": "node --experimental-strip-types --test \"src/lib/**/*.test.ts\"",
     "verify:supabase": "node scripts/verify-supabase.mjs",
     "db:migrate": "node scripts/apply-migrations.mjs"
   },
@@ -16,7 +16,8 @@
     "@supabase/supabase-js": "^2.116.0",
     "next": "16.3.5",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
