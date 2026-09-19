@@ -1,8 +1,14 @@
 "use client";
 
+import { AnalogFrame } from "@/components/AnalogFrame";
 import { useArchive } from "@/components/ArchiveProvider";
 import { Button } from "@/components/Button";
 import { Field, inputClassName } from "@/components/Field";
+import {
+  ANALOG_FRAME_MODES,
+  shouldShowAnalogFrame,
+  type AnalogFrameMode,
+} from "@/lib/analogFrame";
 import { fileToCompressedJpeg } from "@/lib/image";
 import type { AnalyzePayload, FilmRoll, NewFrameInput, RollAnalysis } from "@/lib/types";
 import Link from "next/link";
@@ -318,6 +324,10 @@ function ContactSheetSection({
   const canGenerate = roll.frames.length > 0;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Local UI state only — not persisted to Supabase in this iteration. */
+  const [frameMode, setFrameMode] = useState<AnalogFrameMode>("auto");
+  // Auto stays conservative until a real detectFilmEdge() result is wired in.
+  const showFrame = shouldShowAnalogFrame(frameMode);
 
   async function handleGenerate() {
     setBusy(true);
@@ -352,29 +362,24 @@ function ContactSheetSection({
         <p className="mt-6 text-sm text-muted">Add at least one frame before generating a contact sheet.</p>
       ) : roll.contactSheetGeneratedAt ? (
         <div className="mt-6 bg-film p-4 text-[#ece7dc] sm:p-6">
-          <div className="mb-4 flex flex-wrap justify-between gap-2 text-xs tracking-wide">
-            <span>{roll.title}</span>
-            <span>
-              {roll.filmStock || "Film"} · {roll.frames.length} frames
-            </span>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3 text-xs tracking-wide">
+            <div className="flex flex-wrap justify-between gap-2 sm:block sm:space-y-1">
+              <span className="block">{roll.title}</span>
+              <span className="block text-[#b7b19f]">
+                {roll.filmStock || "Film"} · {roll.frames.length} frames
+              </span>
+            </div>
+            <AnalogFrameModeControl mode={frameMode} onChange={setFrameMode} />
           </div>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 sm:gap-2.5">
             {roll.frames.map((frame) => (
-              <figure key={frame.id} className="bg-black">
-                <div className="aspect-[3/2]">
-                  {frame.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={frame.imageUrl} alt="" className="h-full w-full object-cover grayscale" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-[0.65rem] text-[#9a9588]">
-                      empty
-                    </div>
-                  )}
-                </div>
-                <figcaption className="px-1 py-1 text-center text-[0.65rem] text-[#b7b19f]">
-                  {String(frame.number).padStart(2, "0")}
-                </figcaption>
-              </figure>
+              <AnalogFrame
+                key={frame.id}
+                imageUrl={frame.imageUrl}
+                frameNumber={frame.number}
+                showFrame={showFrame}
+                alt={frame.caption || `Frame ${frame.number}`}
+              />
             ))}
           </div>
         </div>
@@ -382,6 +387,47 @@ function ContactSheetSection({
         <p className="mt-6 text-sm text-muted">The contact sheet is not generated yet.</p>
       )}
     </section>
+  );
+}
+
+function AnalogFrameModeControl({
+  mode,
+  onChange,
+}: {
+  mode: AnalogFrameMode;
+  onChange: (mode: AnalogFrameMode) => void;
+}) {
+  const labels: Record<AnalogFrameMode, string> = {
+    off: "Off",
+    auto: "Auto",
+    on: "On",
+  };
+
+  return (
+    <div
+      className="inline-flex border border-[#3a3c42] bg-[#0f1012] p-0.5"
+      role="group"
+      aria-label="Analog frame presentation"
+    >
+      {ANALOG_FRAME_MODES.map((value) => {
+        const active = mode === value;
+        return (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(value)}
+            className={
+              active
+                ? "bg-[#2a2c32] px-2.5 py-1 text-[0.7rem] tracking-wide text-[#ece7dc] transition-[background-color,color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]"
+                : "px-2.5 py-1 text-[0.7rem] tracking-wide text-[#8a857a] transition-[background-color,color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:text-[#c4bfb2] active:scale-[0.97]"
+            }
+          >
+            {labels[value]}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
